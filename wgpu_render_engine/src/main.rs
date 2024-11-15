@@ -1,4 +1,3 @@
-// main.rs
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -6,6 +5,7 @@ use winit::{
 };
 mod renderer;
 mod vertex;
+mod camera;
 
 use renderer::Renderer;
 
@@ -28,15 +28,25 @@ async fn run() {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::Resized(physical_size) => {
-                    renderer.resize(*physical_size);
+            } if window_id == window.id() => {
+                if !renderer.input(event) {
+                    match event {
+                        WindowEvent::CloseRequested => control_flow.set_exit(),
+                        WindowEvent::Resized(physical_size) => {
+                            renderer.resize(*physical_size);
+                        }
+                        _ => {}
+                    }
                 }
-                _ => {}
-            },
+            }
             Event::RedrawRequested(window_id) if window_id == window.id() => {
-                renderer.render();
+                renderer.update();
+                match renderer.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
+                    Err(wgpu::SurfaceError::OutOfMemory) => control_flow.set_exit(),
+                    Err(e) => eprintln!("{:?}", e),
+                }
             }
             Event::MainEventsCleared => {
                 window.request_redraw();
