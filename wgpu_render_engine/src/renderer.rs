@@ -1,9 +1,28 @@
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 use winit::event::*;
+use cgmath::{Matrix4, Deg, SquareMatrix};
 
 use crate::camera::{Camera, CameraController};
 use crate::vertex::Vertex;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TransformUniform {
+    model: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightUniform {
+    position: [f32; 3],
+    _padding1: u32,
+    color: [f32; 3],
+    ambient: f32,
+    diffuse: f32,
+    specular: f32,
+    _padding2: [u32; 2],
+}
 
 pub struct Renderer {
     surface: wgpu::Surface,
@@ -16,6 +35,11 @@ pub struct Renderer {
     camera_controller: CameraController,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    rotation: f32,
+    transform_buffer: wgpu::Buffer,
+    transform_bind_group: wgpu::BindGroup,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
     pub size: winit::dpi::PhysicalSize<u32>,
 }
 
@@ -69,7 +93,6 @@ impl Renderer {
 
         surface.configure(&device, &config);
 
-        // Initialize camera and controller
         let camera = Camera::new(config.width, config.height);
         let camera_controller = CameraController::new(0.2, 0.4);
         let camera_uniform = camera.build_view_projection_matrix();
@@ -104,6 +127,80 @@ impl Renderer {
             }],
         });
 
+        let transform_uniform = TransformUniform {
+            model: Matrix4::identity().into(),
+        };
+
+        let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Transform Buffer"),
+            contents: bytemuck::cast_slice(&[transform_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let transform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Transform Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let transform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Transform Bind Group"),
+            layout: &transform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: transform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Create light uniform and buffer
+        let light_uniform = LightUniform {
+            position: [2.0, 2.0, 2.0],
+            _padding1: 0,
+            color: [1.0, 1.0, 1.0],
+            ambient: 0.1,
+            diffuse: 0.5,
+            specular: 0.5,
+            _padding2: [0; 2],
+        };
+
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Buffer"),
+            contents: bytemuck::cast_slice(&[light_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Light Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Light Bind Group"),
+            layout: &light_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_buffer.as_entire_binding(),
+            }],
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shader.wgsl"))),
@@ -111,7 +208,11 @@ impl Renderer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&camera_bind_group_layout],
+            bind_group_layouts: &[
+                &camera_bind_group_layout,
+                &transform_bind_group_layout,
+                &light_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -154,22 +255,74 @@ impl Renderer {
         });
 
         let vertices = [
-            Vertex {
-                position: [-0.5, -0.5, 0.0],
-                color: [1.0, 0.0, 0.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-            Vertex {
-                position: [0.5, -0.5, 0.0],
-                color: [0.0, 1.0, 0.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-            Vertex {
-                position: [0.0, 0.5, 0.0],
-                color: [0.0, 0.0, 1.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ];
+    // Front face
+    Vertex {
+        position: [0.0, 0.866, 0.0],    // Top vertex
+        color: [1.0, 0.0, 0.0],         // Red
+        normal: [0.0, 0.5, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.288, 0.5],  // Bottom left
+        color: [0.0, 1.0, 0.0],         // Green
+        normal: [0.0, 0.5, 1.0],
+    },
+    Vertex {
+        position: [0.5, -0.288, 0.5],   // Bottom right
+        color: [0.0, 0.0, 1.0],         // Blue
+        normal: [0.0, 0.5, 1.0],
+    },
+    
+    // Left face
+    Vertex {
+        position: [0.0, 0.866, 0.0],    // Top vertex
+        color: [1.0, 0.0, 0.0],         // Red
+        normal: [-1.0, 0.5, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.288, -0.5], // Back left
+        color: [0.0, 1.0, 0.0],         // Green
+        normal: [-1.0, 0.5, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.288, 0.5],  // Front left
+        color: [0.0, 0.0, 1.0],         // Blue
+        normal: [-1.0, 0.5, 0.0],
+    },
+
+    // Right face
+    Vertex {
+        position: [0.0, 0.866, 0.0],    // Top vertex
+        color: [1.0, 0.0, 0.0],         // Red
+        normal: [1.0, 0.5, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.288, 0.5],   // Front right
+        color: [0.0, 1.0, 0.0],         // Green
+        normal: [1.0, 0.5, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.288, -0.5],  // Back right
+        color: [0.0, 0.0, 1.0],         // Blue
+        normal: [1.0, 0.5, 0.0],
+    },
+
+    // Back face
+    Vertex {
+        position: [0.0, 0.866, 0.0],    // Top vertex
+        color: [1.0, 0.0, 0.0],         // Red
+        normal: [0.0, 0.5, -1.0],
+    },
+    Vertex {
+        position: [0.5, -0.288, -0.5],  // Back right
+        color: [0.0, 1.0, 0.0],         // Green
+        normal: [0.0, 0.5, -1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.288, -0.5], // Back left
+        color: [0.0, 0.0, 1.0],         // Blue
+        normal: [0.0, 0.5, -1.0],
+    },
+];
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -189,6 +342,11 @@ impl Renderer {
             camera_controller,
             camera_buffer,
             camera_bind_group,
+            rotation: 0.0,
+            transform_buffer,
+            transform_bind_group,
+            light_buffer,
+            light_bind_group,
         }
     }
 
@@ -203,28 +361,42 @@ impl Renderer {
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                input: KeyboardInput {
-                    state,
-                    virtual_keycode: Some(keycode),
-                    ..
-                },
+        if let WindowEvent::KeyboardInput {
+            input: KeyboardInput {
+                state,
+                virtual_keycode: Some(key),
                 ..
-            } => self.camera_controller.process_keyboard(*keycode, *state),
-            _ => false,
+            },
+            ..
+        } = event {
+            return self.camera_controller.process_keyboard(*key, *state);
         }
+        false
     }
 
     pub fn update(&mut self) {
-        self.camera.update(&self.camera_controller);
-        let camera_uniform = self.camera.build_view_projection_matrix();
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[camera_uniform]),
-        );
-    }
+    self.camera.update(&self.camera_controller);
+    let camera_uniform = self.camera.build_view_projection_matrix();
+    self.queue.write_buffer(
+        &self.camera_buffer,
+        0,
+        bytemuck::cast_slice(&[camera_uniform]),
+    );
+
+      self.rotation += 0.02;
+    let model = Matrix4::from_angle_x(Deg(self.rotation * 0.7)) * 
+                Matrix4::from_angle_y(Deg(self.rotation)) *
+                Matrix4::from_angle_z(Deg(self.rotation * 0.3));
+    
+    let transform_uniform = TransformUniform {
+        model: model.into(),
+    };
+    self.queue.write_buffer(
+        &self.transform_buffer,
+        0,
+        bytemuck::cast_slice(&[transform_uniform]),
+    );
+}
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -259,9 +431,12 @@ impl Renderer {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.transform_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.light_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..3, 0..1);
+            render_pass.draw(0..12, 0..1);
         }
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
