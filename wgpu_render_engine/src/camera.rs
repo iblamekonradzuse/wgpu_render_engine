@@ -1,21 +1,25 @@
-use cgmath::{perspective, Matrix4, Point3, Rad, Vector3, InnerSpace};
+use cgmath::{perspective, Matrix4, Point3, Rad, Vector3, InnerSpace, Euler, Deg};
 use winit::event::*;
 
 #[derive(Debug)]
 pub struct Camera {
-    position: Point3<f32>,
-    direction: Vector3<f32>,
+    pub position: Point3<f32>,
+    pub direction: Vector3<f32>,
     up: Vector3<f32>,
     aspect: f32,
     fovy: f32,
     znear: f32,
     zfar: f32,
+    pub yaw: f32,
+    pub pitch: f32,
 }
+
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     view_proj: [[f32; 4]; 4],
+    view_position: [f32; 4], // Change to [f32; 4] to ensure 16-byte alignment
 }
 
 impl Camera {
@@ -28,23 +32,41 @@ impl Camera {
             fovy: 45.0,
             znear: 0.1,
             zfar: 100.0,
+            yaw: -90.0, // Start facing negative Z
+            pitch: 0.0,
         }
     }
 
     pub fn build_view_projection_matrix(&self) -> CameraUniform {
-        let view = Matrix4::look_to_rh(self.position, self.direction, self.up);
-        let proj = perspective(Rad(self.fovy.to_radians()), self.aspect, self.znear, self.zfar);
-        CameraUniform {
-            view_proj: (proj * view).into(),
-        }
+    let view = Matrix4::look_to_rh(self.position, self.direction, self.up);
+    let proj = perspective(Rad(self.fovy.to_radians()), self.aspect, self.znear, self.zfar);
+    CameraUniform {
+        view_proj: (proj * view).into(),
+        view_position: [self.position.x, self.position.y, self.position.z, 0.0], // Add 0.0 as the fourth component
     }
+}
 
     pub fn update(&mut self, controller: &CameraController) {
-        // Update position based on movement
-        let forward = self.direction.normalize();
-        let right = forward.cross(self.up).normalize();
+        // Update direction based on mouse movement
+        self.yaw += controller.rotate_horizontal;
+        self.pitch += controller.rotate_vertical;
+
+        // Clamp pitch to prevent camera flipping
+        self.pitch = self.pitch.clamp(-89.0, 89.0);
+
+        // Compute new direction vector
+        let direction = Vector3::new(
+            self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
+            self.pitch.to_radians().sin(),
+            self.yaw.to_radians().sin() * self.pitch.to_radians().cos()
+        ).normalize();
+        self.direction = direction;
+
+        // Compute camera right vector
+        let right = direction.cross(self.up).normalize();
         
-        self.position += forward * (controller.amount_forward - controller.amount_backward) * controller.speed;
+        // Update position based on movement
+        self.position += self.direction * (controller.amount_forward - controller.amount_backward) * controller.speed;
         self.position += right * (controller.amount_right - controller.amount_left) * controller.speed;
         self.position.y += (controller.amount_up - controller.amount_down) * controller.speed;
     }
@@ -55,15 +77,15 @@ impl Camera {
 }
 
 pub struct CameraController {
-    amount_left: f32,
-    amount_right: f32,
-    amount_forward: f32,
-    amount_backward: f32,
-    amount_up: f32,
-    amount_down: f32,
-    rotate_horizontal: f32,
-    rotate_vertical: f32,
-    scroll: f32,
+    pub amount_left: f32,
+    pub amount_right: f32,
+    pub amount_forward: f32,
+    pub amount_backward: f32,
+    pub amount_up: f32,
+    pub amount_down: f32,
+    pub rotate_horizontal: f32,
+    pub rotate_vertical: f32,
+    pub scroll: f32,
     pub speed: f32,
     pub sensitivity: f32,
 }
@@ -114,5 +136,15 @@ impl CameraController {
             }
             _ => false,
         }
+    }
+
+    pub fn process_mouse_movement(&mut self, delta_x: f32, delta_y: f32) {
+        self.rotate_horizontal = -delta_x * self.sensitivity;
+        self.rotate_vertical = -delta_y * self.sensitivity;
+    }
+
+    pub fn reset_mouse_movement(&mut self) {
+        self.rotate_horizontal = 0.0;
+        self.rotate_vertical = 0.0;
     }
 }

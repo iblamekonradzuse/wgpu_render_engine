@@ -3,7 +3,7 @@ use winit::window::Window;
 use winit::event::*;
 use cgmath::{Matrix4, Deg, SquareMatrix};
 
-use crate::camera::{Camera, CameraController};
+use crate::camera::{Camera, CameraController, CameraUniform};
 use crate::vertex::Vertex;
 
 #[repr(C)]
@@ -18,10 +18,12 @@ struct LightUniform {
     position: [f32; 3],
     _padding1: u32,
     color: [f32; 3],
+    _padding2: u32,
     ambient: f32,
     diffuse: f32,
     specular: f32,
-    _padding2: [u32; 2],
+    _padding3: u32,
+    light_space_matrix: [[f32; 4]; 4], 
 }
 
 pub struct Renderer {
@@ -103,20 +105,19 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Camera Bind Group Layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(80).unwrap()), // Ensure 80 bytes
+                },
+                count: None,
+            }],
+        });
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera Bind Group"),
@@ -166,10 +167,12 @@ impl Renderer {
             position: [2.0, 2.0, 2.0],
             _padding1: 0,
             color: [1.0, 1.0, 1.0],
+            _padding2: 0,
             ambient: 0.1,
             diffuse: 0.5,
             specular: 0.5,
-            _padding2: [0; 2],
+            _padding3: 0,
+            light_space_matrix: Matrix4::identity().into(), // Identity matrix for now
         };
 
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -182,7 +185,7 @@ impl Renderer {
             label: Some("Light Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -255,74 +258,74 @@ impl Renderer {
         });
 
         let vertices = [
-    // Front face
-    Vertex {
-        position: [0.0, 0.866, 0.0],    // Top vertex
-        color: [1.0, 0.0, 0.0],         // Red
-        normal: [0.0, 0.5, 1.0],
-    },
-    Vertex {
-        position: [-0.5, -0.288, 0.5],  // Bottom left
-        color: [0.0, 1.0, 0.0],         // Green
-        normal: [0.0, 0.5, 1.0],
-    },
-    Vertex {
-        position: [0.5, -0.288, 0.5],   // Bottom right
-        color: [0.0, 0.0, 1.0],         // Blue
-        normal: [0.0, 0.5, 1.0],
-    },
-    
-    // Left face
-    Vertex {
-        position: [0.0, 0.866, 0.0],    // Top vertex
-        color: [1.0, 0.0, 0.0],         // Red
-        normal: [-1.0, 0.5, 0.0],
-    },
-    Vertex {
-        position: [-0.5, -0.288, -0.5], // Back left
-        color: [0.0, 1.0, 0.0],         // Green
-        normal: [-1.0, 0.5, 0.0],
-    },
-    Vertex {
-        position: [-0.5, -0.288, 0.5],  // Front left
-        color: [0.0, 0.0, 1.0],         // Blue
-        normal: [-1.0, 0.5, 0.0],
-    },
+            // Front face
+            Vertex {
+                position: [0.0, 0.866, 0.0],    // Top vertex
+                color: [1.0, 0.0, 0.0],         // Red
+                normal: [0.0, 0.5, 1.0],
+            },
+            Vertex {
+                position: [-0.5, -0.288, 0.5],  // Bottom left
+                color: [0.0, 1.0, 0.0],         // Green
+                normal: [0.0, 0.5, 1.0],
+            },
+            Vertex {
+                position: [0.5, -0.288, 0.5],   // Bottom right
+                color: [0.0, 0.0, 1.0],         // Blue
+                normal: [0.0, 0.5, 1.0],
+            },
+            
+            // Left face
+            Vertex {
+                position: [0.0, 0.866, 0.0],    // Top vertex
+                color: [1.0, 0.0, 0.0],         // Red
+                normal: [-1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.288, -0.5], // Back left
+                color: [0.0, 1.0, 0.0],         // Green
+                normal: [-1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.288, 0.5],  // Front left
+                color: [0.0, 0.0, 1.0],         // Blue
+                normal: [-1.0, 0.5, 0.0],
+            },
 
-    // Right face
-    Vertex {
-        position: [0.0, 0.866, 0.0],    // Top vertex
-        color: [1.0, 0.0, 0.0],         // Red
-        normal: [1.0, 0.5, 0.0],
-    },
-    Vertex {
-        position: [0.5, -0.288, 0.5],   // Front right
-        color: [0.0, 1.0, 0.0],         // Green
-        normal: [1.0, 0.5, 0.0],
-    },
-    Vertex {
-        position: [0.5, -0.288, -0.5],  // Back right
-        color: [0.0, 0.0, 1.0],         // Blue
-        normal: [1.0, 0.5, 0.0],
-    },
+            // Right face
+            Vertex {
+                position: [0.0, 0.866, 0.0],    // Top vertex
+                color: [1.0, 0.0, 0.0],         // Red
+                normal: [1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [0.5, -0.288, 0.5],   // Front right
+                color: [0.0, 1.0, 0.0],         // Green
+                normal: [1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [0.5, -0.288, -0.5],  // Back right
+                color: [0.0, 0.0, 1.0],         // Blue
+                normal: [1.0, 0.5, 0.0],
+            },
 
-    // Back face
-    Vertex {
-        position: [0.0, 0.866, 0.0],    // Top vertex
-        color: [1.0, 0.0, 0.0],         // Red
-        normal: [0.0, 0.5, -1.0],
-    },
-    Vertex {
-        position: [0.5, -0.288, -0.5],  // Back right
-        color: [0.0, 1.0, 0.0],         // Green
-        normal: [0.0, 0.5, -1.0],
-    },
-    Vertex {
-        position: [-0.5, -0.288, -0.5], // Back left
-        color: [0.0, 0.0, 1.0],         // Blue
-        normal: [0.0, 0.5, -1.0],
-    },
-];
+            // Back face
+            Vertex {
+                position: [0.0, 0.866, 0.0],    // Top vertex
+                color: [1.0, 0.0, 0.0],         // Red
+                normal: [0.0, 0.5, -1.0],
+            },
+            Vertex {
+                position: [0.5, -0.288, -0.5],  // Back right
+                color: [0.0, 1.0, 0.0],         // Green
+                normal: [0.0, 0.5, -1.0],
+            },
+            Vertex {
+                position: [-0.5, -0.288, -0.5], // Back left
+                color: [0.0, 0.0, 1.0],         // Blue
+                normal: [0.0, 0.5, -1.0],
+            },
+        ];
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -361,17 +364,17 @@ impl Renderer {
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        if let WindowEvent::KeyboardInput {
-            input: KeyboardInput {
-                state,
-                virtual_keycode: Some(key),
+        match event {
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    state,
+                    virtual_keycode: Some(key),
+                    ..
+                },
                 ..
-            },
-            ..
-        } = event {
-            return self.camera_controller.process_keyboard(*key, *state);
+            } => self.camera_controller.process_keyboard(*key, *state),
+            _ => false
         }
-        false
     }
 
     pub fn update(&mut self) {
@@ -397,7 +400,9 @@ impl Renderer {
         bytemuck::cast_slice(&[transform_uniform]),
     );
 }
-
+ pub fn process_mouse_movement(&mut self, delta_x: f32, delta_y: f32) {
+        self.camera_controller.process_mouse_movement(delta_x, delta_y);
+    }
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
