@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 use winit::event::*;
-use cgmath::{Matrix4, Deg, SquareMatrix};
+use cgmath::{Matrix4, Deg, SquareMatrix, Vector3};
 
 use crate::camera::{Camera, CameraController, CameraUniform};
 use crate::vertex::Vertex;
@@ -163,14 +163,15 @@ impl Renderer {
         });
 
         // Create light uniform and buffer
+        // In the Renderer::new method, modify the light_uniform:
         let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
+            position: [5.0, 5.0, 5.0],  // Move light further out
             _padding1: 0,
-            color: [1.0, 1.0, 1.0],
+            color: [1.0, 1.0, 1.0],     // Full white light
             _padding2: 0,
-            ambient: 0.1,
-            diffuse: 0.5,
-            specular: 0.5,
+            ambient: 0.3,               // Increased ambient
+            diffuse: 1.2,               // Increased diffuse
+            specular: 0.8,              // Increased specular
             _padding3: 0,
             light_space_matrix: Matrix4::identity().into(), // Identity matrix for now
         };
@@ -219,113 +220,245 @@ impl Renderer {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+        // In the create_render_pipeline section of new(), modify the PrimitiveState:
+let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    label: Some("Render Pipeline"),
+    layout: Some(&render_pipeline_layout),
+    vertex: wgpu::VertexState {
+        module: &shader,
+        entry_point: "vs_main",
+        buffers: &[Vertex::desc()], 
+    },
+    fragment: Some(wgpu::FragmentState {
+        module: &shader,
+        entry_point: "fs_main",
+        targets: &[Some(wgpu::ColorTargetState {
+            format: config.format,
+            blend: Some(wgpu::BlendState {
+                color: wgpu::BlendComponent::REPLACE,
+                alpha: wgpu::BlendComponent::REPLACE,
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
+            write_mask: wgpu::ColorWrites::ALL,
+        })],
+    }),
+    primitive: wgpu::PrimitiveState {
+        topology: wgpu::PrimitiveTopology::TriangleList,
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: None,  // Changed from Some(wgpu::Face::Back) to None
+        unclipped_depth: false,
+        polygon_mode: wgpu::PolygonMode::Fill,
+        conservative: false,
+    },
+    depth_stencil: None,
+    multisample: wgpu::MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+    },
+    multiview: None,
+});
 
+        // Define all vertices for the scene
         let vertices = [
-            // Front face
+            // Front face of pyramid
             Vertex {
-                position: [0.0, 0.866, 0.0],    // Top vertex
+                position: [0.0, 1.0, 0.0],      // Top vertex
                 color: [1.0, 0.0, 0.0],         // Red
                 normal: [0.0, 0.5, 1.0],
             },
             Vertex {
-                position: [-0.5, -0.288, 0.5],  // Bottom left
+                position: [-0.5, -0.5, 0.5],    // Bottom left
                 color: [0.0, 1.0, 0.0],         // Green
                 normal: [0.0, 0.5, 1.0],
             },
             Vertex {
-                position: [0.5, -0.288, 0.5],   // Bottom right
+                position: [0.5, -0.5, 0.5],     // Bottom right
                 color: [0.0, 0.0, 1.0],         // Blue
                 normal: [0.0, 0.5, 1.0],
-            },
-            
-            // Left face
-            Vertex {
-                position: [0.0, 0.866, 0.0],    // Top vertex
-                color: [1.0, 0.0, 0.0],         // Red
-                normal: [-1.0, 0.5, 0.0],
-            },
-            Vertex {
-                position: [-0.5, -0.288, -0.5], // Back left
-                color: [0.0, 1.0, 0.0],         // Green
-                normal: [-1.0, 0.5, 0.0],
-            },
-            Vertex {
-                position: [-0.5, -0.288, 0.5],  // Front left
-                color: [0.0, 0.0, 1.0],         // Blue
-                normal: [-1.0, 0.5, 0.0],
             },
 
-            // Right face
+            // Right face of pyramid
             Vertex {
-                position: [0.0, 0.866, 0.0],    // Top vertex
-                color: [1.0, 0.0, 0.0],         // Red
+                position: [0.0, 1.0, 0.0],      // Top vertex
+                color: [1.0, 1.0, 0.0],         // Yellow
                 normal: [1.0, 0.5, 0.0],
             },
             Vertex {
-                position: [0.5, -0.288, 0.5],   // Front right
-                color: [0.0, 1.0, 0.0],         // Green
+                position: [0.5, -0.5, 0.5],     // Bottom front
+                color: [1.0, 0.0, 1.0],         // Magenta
                 normal: [1.0, 0.5, 0.0],
             },
             Vertex {
-                position: [0.5, -0.288, -0.5],  // Back right
-                color: [0.0, 0.0, 1.0],         // Blue
+                position: [0.5, -0.5, -0.5],    // Bottom back
+                color: [0.0, 1.0, 1.0],         // Cyan
                 normal: [1.0, 0.5, 0.0],
             },
 
-            // Back face
+            // Back face of pyramid
             Vertex {
-                position: [0.0, 0.866, 0.0],    // Top vertex
-                color: [1.0, 0.0, 0.0],         // Red
+                position: [0.0, 1.0, 0.0],      // Top vertex
+                color: [0.5, 0.5, 0.5],         // Gray
                 normal: [0.0, 0.5, -1.0],
             },
             Vertex {
-                position: [0.5, -0.288, -0.5],  // Back right
-                color: [0.0, 1.0, 0.0],         // Green
+                position: [0.5, -0.5, -0.5],    // Bottom right
+                color: [0.7, 0.2, 0.3],         // Dark Pink
                 normal: [0.0, 0.5, -1.0],
             },
             Vertex {
-                position: [-0.5, -0.288, -0.5], // Back left
-                color: [0.0, 0.0, 1.0],         // Blue
+                position: [-0.5, -0.5, -0.5],   // Bottom left
+                color: [0.2, 0.7, 0.3],         // Dark Green
                 normal: [0.0, 0.5, -1.0],
             },
-        ];
+
+            // Left face of pyramid
+            Vertex {
+                position: [0.0, 1.0, 0.0],      // Top vertex
+                color: [0.3, 0.7, 0.5],         // Teal
+                normal: [-1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5, -0.5],   // Bottom back
+                color: [0.8, 0.6, 0.2],         // Brown
+                normal: [-1.0, 0.5, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5, 0.5],    // Bottom front
+                color: [0.4, 0.4, 0.8],         // Indigo
+                normal: [-1.0, 0.5, 0.0],
+            },
+
+            // Bottom face of pyramid - Triangle 1
+            Vertex {
+                position: [-0.5, -0.5, 0.5],    // Front left
+                color: [0.5, 0.2, 0.7],         // Purple
+                normal: [0.0, -1.0, 0.0],
+            },
+            Vertex {
+                position: [0.5, -0.5, 0.5],     // Front right
+                color: [0.2, 0.5, 0.7],         // Blue-Green
+                normal: [0.0, -1.0, 0.0],
+            },
+            Vertex {
+                position: [0.5, -0.5, -0.5],    // Back right
+                color: [0.7, 0.5, 0.2],         // Orange
+                normal: [0.0, -1.0, 0.0],
+            },
+
+            // Bottom face of pyramid - Triangle 2
+            Vertex {
+                position: [0.5, -0.5, -0.5],    // Back right
+                color: [0.7, 0.5, 0.2],         // Orange
+                normal: [0.0, -1.0, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5, -0.5],   // Back left
+                color: [0.3, 0.6, 0.1],         // Lime Green
+                normal: [0.0, -1.0, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5, 0.5],    // Front left
+                color: [0.5, 0.2, 0.7],         // Purple
+                normal: [0.0, -1.0, 0.0],
+            },
+
+            // Ground plane - Front section
+            Vertex {
+                position: [-20.0, -1.5, -20.0],
+                color: [0.2, 0.5, 0.2],         // Base green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, -20.0],
+                color: [0.22, 0.55, 0.22],      // Slightly lighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, -10.0],
+                color: [0.25, 0.6, 0.25],       // Varied green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, -20.0],
+                color: [0.2, 0.5, 0.2],         // Base green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, -10.0],
+                color: [0.25, 0.6, 0.25],       // Varied green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, -10.0],
+                color: [0.27, 0.65, 0.27],      // Another green variation
+                normal: [0.0, 1.0, 0.0],
+            },
+
+            // Ground plane - Middle section
+            Vertex {
+                position: [-20.0, -1.5, -10.0],
+                color: [0.25, 0.6, 0.25],       // Varied green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, -10.0],
+                color: [0.25, 0.6, 0.25],       // Varied green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, 10.0],
+                color: [0.3, 0.65, 0.3],        // Slightly brighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, -10.0],
+                color: [0.25, 0.6, 0.25],       // Varied green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, 10.0],
+                color: [0.3, 0.65, 0.3],        // Slightly brighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, 10.0],
+                color: [0.32, 0.7, 0.32],       // Brighter green variation
+                normal: [0.0, 1.0, 0.0],
+            },
+
+            // Ground plane - Back section
+            Vertex {
+                position: [-20.0, -1.5, 10.0],
+                color: [0.3, 0.65, 0.3],        // Slightly brighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, 10.0],
+                color: [0.3, 0.65, 0.3],        // Slightly brighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, 20.0],
+                color: [0.2, 0.55, 0.2],        // Base green variation
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, 10.0],
+                color: [0.3, 0.65, 0.3],        // Slightly brighter green
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [20.0, -1.5, 20.0],
+                color: [0.2, 0.55, 0.2],        // Base green variation
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex {
+                position: [-20.0, -1.5, 20.0],
+                color: [0.2, 0.5, 0.2],         // Base green
+                normal: [0.0, 1.0, 0.0],
+            },
+            ];
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -378,6 +511,7 @@ impl Renderer {
     }
 
     pub fn update(&mut self) {
+    // Update camera
     self.camera.update(&self.camera_controller);
     let camera_uniform = self.camera.build_view_projection_matrix();
     self.queue.write_buffer(
@@ -386,7 +520,13 @@ impl Renderer {
         bytemuck::cast_slice(&[camera_uniform]),
     );
 
-      self.rotation += 0.02;
+    // Reset mouse movement
+    self.camera_controller.reset_mouse_movement();
+
+    // Increase rotation speed and add more dynamic rotation
+    self.rotation += 0.0; // Increase rotation speed
+    
+    // Create a more complex rotation matrix
     let model = Matrix4::from_angle_x(Deg(self.rotation * 0.7)) * 
                 Matrix4::from_angle_y(Deg(self.rotation)) *
                 Matrix4::from_angle_z(Deg(self.rotation * 0.3));
@@ -400,51 +540,89 @@ impl Renderer {
         bytemuck::cast_slice(&[transform_uniform]),
     );
 }
+
  pub fn process_mouse_movement(&mut self, delta_x: f32, delta_y: f32) {
         self.camera_controller.process_mouse_movement(delta_x, delta_y);
     }
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    let output = self.surface.get_current_texture()?;
+    let view = output
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
+    let mut encoder = self
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.transform_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.light_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..12, 0..1);
-        }
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.light_bind_group, &[]);
 
-        Ok(())
+        // First render pyramid with rotation and translation
+        let model = Matrix4::from_angle_x(Deg(self.rotation * 0.7)) * 
+                   Matrix4::from_angle_y(Deg(self.rotation)) *
+                   Matrix4::from_angle_z(Deg(self.rotation * 0.3)) *
+                   Matrix4::from_translation(Vector3::new(0.0, 1.0, 0.0));  // Lift pyramid up
+        
+        let transform_uniform = TransformUniform {
+            model: model.into(),
+        };
+        self.queue.write_buffer(
+            &self.transform_buffer,
+            0,
+            bytemuck::cast_slice(&[transform_uniform]),
+        );
+        render_pass.set_bind_group(1, &self.transform_bind_group, &[]);
+        
+        // Render pyramid vertices first
+        let pyramid_vertex_count = 18;
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.draw(0..pyramid_vertex_count, 0..1);
+        
+        // Then render ground plane with identity transform
+        let ground_transform_uniform = TransformUniform {
+            model: Matrix4::identity().into(),
+        };
+        self.queue.write_buffer(
+            &self.transform_buffer,
+            0,
+            bytemuck::cast_slice(&[ground_transform_uniform]),
+        );
+        render_pass.set_bind_group(1, &self.transform_bind_group, &[]);
+        
+        // Render ground plane vertices
+        let ground_start_index = 18;  // Start index for ground vertices
+        let ground_vertex_count = 18;
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.draw(ground_start_index..ground_start_index + ground_vertex_count, 0..1);
     }
+
+    self.queue.submit(std::iter::once(encoder.finish()));
+    output.present();
+
+    Ok(())
+}
+
 }

@@ -139,9 +139,9 @@ impl CameraController {
     }
 
     pub fn process_mouse_movement(&mut self, delta_x: f32, delta_y: f32) {
-        self.rotate_horizontal = -delta_x * self.sensitivity;
-        self.rotate_vertical = -delta_y * self.sensitivity;
-    }
+    self.rotate_horizontal = delta_x * self.sensitivity;
+    self.rotate_vertical = -delta_y * self.sensitivity;
+}
 
     pub fn reset_mouse_movement(&mut self) {
         self.rotate_horizontal = 0.0;
